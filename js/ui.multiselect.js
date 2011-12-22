@@ -96,7 +96,12 @@ $.widget("ui.multiselect", {
 		// fix list height to match <option> depending on their individual header's heights
 		this.selectedList.height(Math.max(height-this.selectedActions.height(),1));
 		this.availableList.height(Math.max(height-this.availableActions.height(),1));
-
+		
+		this._registerHoverEvents(this.container);
+		this._registerDoubleClickEvents(this.container);
+		this._registerAddEvents(this.availableList);
+		this._registerRemoveEvents(this.selectedList);
+		
 		if ( !this.options.animated ) {
 			this.options.show = 'show';
 			this.options.hide = 'hide';
@@ -242,7 +247,7 @@ $.widget("ui.multiselect", {
 		var clone = clonee.clone(false,false);
 		clone.data('optionLink', clonee.data('optionLink'));
 		clone.data('idx', clonee.data('idx'));
-		return clone;
+		return clone.removeClass('ui-state-hover');
 	},
 	_setSelected: function(item, selected) {
 		var temp = item.data('optionLink').attr('selected', selected);
@@ -293,16 +298,10 @@ $.widget("ui.multiselect", {
 			else
 				item.children('span').removeClass('ui-icon-arrowthick-2-n-s').addClass('ui-helper-hidden').removeClass('ui-icon');
 			item.find('a.action span').addClass('ui-icon-minus').removeClass('ui-icon-plus');
-			this._registerRemoveEvents(item.find('a.action'));
-
 		} else {
 			item.children('span').removeClass('ui-icon-arrowthick-2-n-s').addClass('ui-helper-hidden').removeClass('ui-icon');
 			item.find('a.action span').addClass('ui-icon-plus').removeClass('ui-icon-minus');
-			this._registerAddEvents(item.find('a.action'));
 		}
-
-		this._registerDoubleClickEvents(item);
-		this._registerHoverEvents(item);
 	},
 	// taken from John Resig's liveUpdate script
 	_filter: function(list) {
@@ -329,62 +328,62 @@ $.widget("ui.multiselect", {
 			});
 		}
 	},
-	_registerDoubleClickEvents: function(elements) {
-		if (!this.options.doubleClickable) return;
-		elements.dblclick(function() {
-			elements.find('a.action').click();
-		});
-	},
-	_registerHoverEvents: function(elements) {
-		elements.removeClass('ui-state-hover');
-		elements.mouseover(function() {
-			$(this).addClass('ui-state-hover');
-		});
-		elements.mouseout(function() {
-			$(this).removeClass('ui-state-hover');
-		});
-	},
-	_registerAddEvents: function(elements) {
+	_registerDoubleClickEvents: function(container) {
 		var that = this;
-		elements.click(function() {
-			var item = that._setSelected($(this).parent(), true);
+		container.delegate("li.ui-element", "dblclick", function(e){
+			if (!that.options.doubleClickable) return;
+			$(this).find('a.action').click();
+		});
+	},
+	_registerHoverEvents: function(container) {
+		container.delegate("li.ui-element", "mouseover mouseout", function(e){
+			if (e.type == 'mouseover') {
+				$(this).addClass('ui-state-hover');
+			}else {
+				$(this).removeClass('ui-state-hover');
+			}
+		});
+	},
+	_registerAddEvents: function(availableList) {
+		var that = this;
+		availableList.delegate("a.action", "click", function(e){
+			that._setSelected($(this).parent(), true);
 			that.count += 1;
 			that._updateCount();
 
 			// Prevent extra clicks from triggering bogus add events, if a user
 			// tries clicking during the removal process.
-			$(this).unbind('click');
+			$(this).remove();
 
 			return false;
 		});
-
-		// make draggable
-		if (this.options.sortable && this.options.dragToAdd) {
-  		elements.each(function() {
-  			$(this).parent().draggable({
-  	      connectToSortable: that.selectedList,
-  				helper: function() {
-  					var selectedItem = that._cloneWithData($(this)).width($(this).width() - 50);
-  					selectedItem.width($(this).width());
-  					return selectedItem;
-  				},
-  				appendTo: that.container,
-  				containment: that.container,
-  				revert: 'invalid'
-  	    });
-  		});
-		}
+		availableList.delegate("li.ui-element", "mouseover", function(e){
+			// make draggable
+			if (that.options.sortable && that.options.dragToAdd) {
+		  		$(this).draggable({
+		  	    connectToSortable: that.selectedList,
+		  			helper: function() {
+		  				var selectedItem = that._cloneWithData($(this)).width($(this).width() - 50);
+		  				selectedItem.width($(this).width());
+		  				return selectedItem;
+		  			},
+		  			appendTo: that.container,
+		  			containment: that.container,
+		  			revert: 'invalid'
+		  	    });
+			}
+		});	
 	},
-	_registerRemoveEvents: function(elements) {
+	_registerRemoveEvents: function(selectedList) {
 		var that = this;
-		elements.click(function() {
+		selectedList.delegate("a.action", "click", function(e){
 			that._setSelected($(this).parent(), false);
 			that.count -= 1;
 			that._updateCount();
 
 			// Prevent extra clicks from triggering bogus remove events, if a
 			// user tries clicking during the removal process.
-			$(this).unbind('click');
+			$(this).remove();
 
 			return false;
 		});

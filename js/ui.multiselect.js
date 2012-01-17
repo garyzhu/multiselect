@@ -67,8 +67,8 @@ $.widget("ui.multiselect", {
 		}
 		this.selectedActions = $('<div class="actions ui-widget-header ui-helper-clearfix"><span class="count">0 '+$.ui.multiselect.locale.itemsCount+'</span>'+(this.options.includeRemoveAll?'<a href="#" class="remove-all">'+$.ui.multiselect.locale.removeAll+'</a>':'<span class="remove-all">&nbsp;</span>')+'</div>').appendTo(this.selectedContainer);
 		this.availableActions = $('<div class="actions ui-widget-header ui-helper-clearfix"><input type="text" class="search empty ui-widget-content ui-corner-all"/>'+(this.options.includeAddAll?'<a href="#" class="add-all">'+$.ui.multiselect.locale.addAll+'</a>':'<span class="add-all">&nbsp;</span>')+'</div>').appendTo(this.availableContainer);
-		this.selectedList = $('<ul class="selected connected-list"><li class="ui-helper-hidden-accessible"></li></ul>').bind('selectstart', function(){return false;}).appendTo(this.selectedContainer);
-		this.availableList = $('<ul class="available connected-list"><li class="ui-helper-hidden-accessible"></li></ul>').bind('selectstart', function(){return false;}).appendTo(this.availableContainer);
+		this.selectedList = $('<ul class="selected connected-list"></ul>').appendTo(this.selectedContainer);
+		this.availableList = $('<ul class="available connected-list"></ul>').appendTo(this.availableContainer);
 
 		var that = this;
 
@@ -126,7 +126,8 @@ $.widget("ui.multiselect", {
 					// This lets us recognize which item was just added to
 					// the list in receive, per the workaround for not being
 					// able to reference the new element.
-					ui.item.addClass('dropped');
+					if (ui.item.hasClass('ui-draggable'))
+						ui.item.addClass('dropped');
 				},
 				receive: function(event, ui) {
 					ui.item.data('optionLink').attr('selected', true);
@@ -136,14 +137,12 @@ $.widget("ui.multiselect", {
 					// workaround, because there's no way to reference
 					// the new element, see http://dev.jqueryui.com/ticket/4303
 					that.selectedList.children('.dropped').each(function() {
-						$(this).removeClass('dropped');
-						$(this).data('optionLink', ui.item.data('optionLink'));
-						$(this).data('idx', ui.item.data('idx'));
-						that._applyItemState($(this), true);
+						$(this).replaceWith(ui.item);
+						that._applyItemState(ui.item, true);
 					});
 
 					// workaround according to http://dev.jqueryui.com/ticket/4088
-					setTimeout(function() { ui.item.remove(); }, 1);
+					setTimeout(function() { ui.item.draggable("destroy"); }, 1);
 				},
 				stop: function (event, ui) { that.element.change(); }
 			});
@@ -158,22 +157,46 @@ $.widget("ui.multiselect", {
 
 		// batch actions
 		this.container.find(".remove-all").click(function() {
-			that._populateLists(that.element.find('option').removeAttr('selected'));
-			that.element.trigger('change');
+			var f = document.createDocumentFragment();
+			that.selectedList.children('li').each(function(i) {
+				f.appendChild(this);
+			});
+			if (f.hasChildNodes()){
+				var nodes = f.childNodes, 
+				    len = nodes.length;
+				for(var i=0; i<len; i++){
+	   				var item = $(nodes[i]);
+   					that._applyItemState(item, false);
+   					item.data('optionLink').attr('selected', false);
+   				}
+               	that.count -= len;
+       			that._updateCount();
+       			that.availableList.append(f);
+       			that.element.trigger('change');
+			}
 			return false;
 		});
 
 		this.container.find(".add-all").click(function() {
-			var options = that.element.find('option').not(":selected");
-			if (that.availableList.children('li:hidden').length > 1) {
-				that.availableList.children('li').each(function(i) {
-					if ($(this).is(":visible")) $(options[i-1]).attr('selected', 'selected');
-				});
-			} else {
-				options.attr('selected', 'selected');
+			var f = document.createDocumentFragment();
+			that.availableList.children('li:visible').each(function(i) {
+				f.appendChild(this);
+			});
+			if (f.hasChildNodes()){
+				var nodes = f.childNodes, 
+				    len = nodes.length;
+				for(var i=0; i<len; i++){
+    				var item = $(nodes[i]);
+    				if (item.hasClass("ui-draggable"))
+    					item.draggable("destroy");
+    				that._applyItemState(item, true);
+    				item.data('optionLink').attr('selected', true);
+	            }
+               	that.count += len;
+       			that._updateCount();
+       			that.selectedList.append(f);
+       			that.element.trigger('change');
 			}
-			that._populateLists(that.element.find('option'));
-			that.element.trigger('change');
 			return false;
 		});
 	},
@@ -218,20 +241,30 @@ $.widget("ui.multiselect", {
 		this.availableList.children('.ui-element').remove();
 		this.count = 0;
 
-		var that = this;
-		var items = $(options.map(function(i) {
-	      var item = that._getOptionNode(this).appendTo(this.selected ? that.selectedList : that.availableList).show();
-
-			if (this.selected) that.count += 1;
-			that._applyItemState(item, this.selected);
-			item.data('idx', i);
-			return item[0];
-    }));
-
-		// update count
-		this._updateCount();
-		that._filter.apply(this.availableContainer.find('input.search'), [that.availableList]);
-  },
+		var that = this, 
+		    selectedFrag = document.createDocumentFragment(),
+		    availableFrag = document.createDocumentFragment();
+		
+		options.each(function(index) {
+			var item;
+			if (this.selected){
+				that.count += 1;
+				if (that.options.sortable)
+					item = $('<li class="ui-state-default ui-element" title="'+this.text+'"><span class="ui-icon ui-icon-arrowthick-2-n-s"/>'+this.text+'<a href="#" class="action"><span class="ui-corner-all ui-icon ui-icon-minus"/></a></li>');
+				else 
+					item = $('<li class="ui-state-default ui-element" title="'+this.text+'"><span class="ui-icon ui-helper-hidden"/>'+this.text+'<a href="#" class="action"><span class="ui-corner-all ui-icon ui-icon-minus"/></a></li>');
+				selectedFrag.appendChild(item[0]);
+			}else {
+				item = $('<li class="ui-state-default ui-element" title="'+this.text+'"><span class="ui-helper-hidden"/>'+this.text+'<a href="#" class="action"><span class="ui-corner-all ui-icon ui-icon-plus"/></a></li>');
+				availableFrag.appendChild(item[0]);
+			}
+			item.data({'optionLink': $(this), 'idx': index});
+		});
+        that.selectedList.append(selectedFrag);
+        that.availableList.append(availableFrag);
+      	that._updateCount();
+       	that._filter.apply(that.availableContainer.find('input.search'), [that.availableList]);
+	},
 	_updateCount: function() {
 		this.selectedContainer.find('span.count').text(this.count+" "+$.ui.multiselect.locale.itemsCount);
 	},
@@ -245,23 +278,24 @@ $.widget("ui.multiselect", {
 	// didn't find a smarter away around this
 	_cloneWithData: function(clonee) {
 		var clone = clonee.clone(false,false);
-		clone.data('optionLink', clonee.data('optionLink'));
-		clone.data('idx', clonee.data('idx'));
-		return clone.removeClass('ui-state-hover');
+		clone.data({'optionLink': clonee.data('optionLink'),
+					'idx': clonee.data('idx')
+		});
+		return clone;
 	},
 	_setSelected: function(item, selected) {
 		var temp = item.data('optionLink').attr('selected', selected);
-		var parent = temp.parent();
+		var that = this, parent = temp.parent();
 		temp.detach().appendTo(parent);
 		this.element.trigger('change');
 
 		if (selected) {
-			var selectedItem = this._cloneWithData(item);
-			item[this.options.hide](this.options.animated, function() { $(this).remove(); });
-			selectedItem.appendTo(this.selectedList).hide()[this.options.show](this.options.animated);
-
-			this._applyItemState(selectedItem, true);
-			return selectedItem;
+			item[this.options.hide](
+				this.options.animated, 
+				function() {
+					that._applyItemState($(this).appendTo(that.selectedList)[that.options.show](that.options.animated).draggable("destroy"), true);
+				}
+			);
 		} else {
 
 			// look for successor based on initial option index
@@ -282,37 +316,39 @@ $.widget("ui.multiselect", {
 				succ = items[i];
 			}
 
-			var availableItem = this._cloneWithData(item);
-			succ ? availableItem.insertBefore($(succ)) : availableItem.appendTo(this.availableList);
-			item[this.options.hide](this.options.animated, function() { $(this).remove(); });
-			availableItem.hide()[this.options.show](this.options.animated);
-
-			this._applyItemState(availableItem, false);
-			return availableItem;
+			item[this.options.hide](
+				this.options.animated, 
+				function() {
+					succ ? $(this).detach().insertBefore($(succ)) : $(this).detach().appendTo(that.availableList);
+					$(this)[that.options.show](that.options.animated);
+				}
+			);
+			this._applyItemState(item, false);
+			return item;
 		}
 	},
 	_applyItemState: function(item, selected) {
 		if (selected) {
 			if (this.options.sortable)
-				item.children('span').addClass('ui-icon-arrowthick-2-n-s').removeClass('ui-helper-hidden').addClass('ui-icon');
+				item.children('span').removeClass('ui-helper-hidden').addClass('ui-icon-arrowthick-2-n-s ui-icon');
 			else
-				item.children('span').removeClass('ui-icon-arrowthick-2-n-s').addClass('ui-helper-hidden').removeClass('ui-icon');
-			item.find('a.action span').addClass('ui-icon-minus').removeClass('ui-icon-plus');
+				item.children('span').removeClass('ui-icon ui-icon-arrowthick-2-n-s').addClass('ui-helper-hidden');
+			item.find('a.action span').removeClass('ui-icon-plus').addClass('ui-icon-minus');
 		} else {
-			item.children('span').removeClass('ui-icon-arrowthick-2-n-s').addClass('ui-helper-hidden').removeClass('ui-icon');
-			item.find('a.action span').addClass('ui-icon-plus').removeClass('ui-icon-minus');
+			item.children('span').removeClass('ui-icon ui-icon-arrowthick-2-n-s').addClass('ui-helper-hidden');
+			item.find('a.action span').removeClass('ui-icon-minus').addClass('ui-icon-plus');
 		}
+		item.removeClass('ui-state-hover');
 	},
 	// taken from John Resig's liveUpdate script
 	_filter: function(list) {
 		var input = $(this);
+		var term = $.trim(input.val().toLowerCase()), scores = [];
 		var rows = list.children('li'),
 			cache = rows.map(function(){
 
 				return $(this).text().toLowerCase();
 			});
-
-		var term = $.trim(input.val().toLowerCase()), scores = [];
 
 		if (!term) {
 			rows.show();
@@ -347,44 +383,41 @@ $.widget("ui.multiselect", {
 	_registerAddEvents: function(availableList) {
 		var that = this;
 		availableList.delegate("a.action", "click", function(e){
-			that._setSelected($(this).parent(), true);
-			that.count += 1;
-			that._updateCount();
-
-			// Prevent extra clicks from triggering bogus add events, if a user
-			// tries clicking during the removal process.
-			$(this).remove();
-
+			var parent = $(this).parent();
+			if (!parent.is(":animated")){ // skip, if another operation is ready in progress. 
+				that._setSelected(parent, true);
+				that.count += 1;
+				that._updateCount();
+			}
 			return false;
 		});
-		availableList.delegate("li.ui-element", "mouseover", function(e){
-			// make draggable
-			if (that.options.sortable && that.options.dragToAdd) {
+		if (that.options.sortable && that.options.dragToAdd) {
+			availableList.delegate("li.ui-element:not(.ui-draggable)", "mouseover", function(e){
+				// make draggable
 		  		$(this).draggable({
-		  	    connectToSortable: that.selectedList,
+		  			connectToSortable: that.selectedList,
 		  			helper: function() {
-		  				var selectedItem = that._cloneWithData($(this)).width($(this).width() - 50);
-		  				selectedItem.width($(this).width());
-		  				return selectedItem;
+		  				// helper: "clone", doesn't get the correct width
+		  				// until you drag the clone into the selectedList.
+		  				return $(this).clone().width($(this).width());
 		  			},
 		  			appendTo: that.container,
 		  			containment: that.container,
 		  			revert: 'invalid'
 		  	    });
-			}
-		});	
+
+			});
+		}
 	},
 	_registerRemoveEvents: function(selectedList) {
 		var that = this;
 		selectedList.delegate("a.action", "click", function(e){
-			that._setSelected($(this).parent(), false);
-			that.count -= 1;
-			that._updateCount();
-
-			// Prevent extra clicks from triggering bogus remove events, if a
-			// user tries clicking during the removal process.
-			$(this).remove();
-
+			var parent = $(this).parent();
+			if (!parent.is(":animated")){ // skip, if another operation is ready in progress. 
+				that._setSelected($(this).parent(), false);
+				that.count -= 1;
+				that._updateCount();
+			}
 			return false;
 		});
  	},

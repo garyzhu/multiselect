@@ -36,17 +36,18 @@ $.widget("ui.multiselect", {
 		animated: 'fast',
 		show: 'slideDown',
 		hide: 'slideUp',
-		dividerLocation: 0.6,
+		dividerLocation: 0.5,
 		selectedContainerOnLeft: true,
 		width: null,
 		height: null,
 		nodeComparator: function(node1,node2) {
-			var text1 = node1.text(),
-			    text2 = node2.text();
-			return text1 == text2 ? 0 : (text1 < text2 ? -1 : 1);
+			var idx1 = node1.idx,
+			    idx2 = node2.idx;
+			return idx1 == idx2 ? 0 : (idx1 < idx2 ? -1 : 1);
 		},
 		includeRemoveAll: true,
-		includeAddAll: true
+		includeAddAll: true,
+		loaded : null
 	},
 	_create: function() {
 		this.element.hide();
@@ -80,6 +81,8 @@ $.widget("ui.multiselect", {
 		if (!height) {
 			height = this.element.height();
 		}
+
+		that.busy = $("<div style='top: "+height/2+"px; left: "+(width/2-50)+"px;' class='loading'><span class'ui-icon'></span> Processing</div>");
 
 		// set dimensions
 		this.container.width(width-2);
@@ -162,17 +165,22 @@ $.widget("ui.multiselect", {
 				f.appendChild(this);
 			});
 			if (f.hasChildNodes()){
-				var nodes = f.childNodes, 
-				    len = nodes.length;
-				for(var i=0; i<len; i++){
-	   				var item = $(nodes[i]);
-   					that._applyItemState(item, false);
-   					item.data('optionLink').attr('selected', false);
-   				}
-               	that.count -= len;
-       			that._updateCount();
-       			that.availableList.append(f);
-       			that.element.trigger('change');
+				$(that.container).append(that.busy); // show busy spinner
+				timedProcessArray(
+						$.makeArray(f.childNodes), 
+		            	function(node){
+		    				var item = $(node);
+		    				that._applyItemState(item, false);
+		    				item.data('optionLink').attr('selected', false);
+		                },
+		                function(){ // callback
+		                	that.count -= f.childNodes.length;
+		        			that._updateCount();
+		        			that.availableList.append(f);
+		        			that.busy.detach();  // remove busy spinner
+		        			that.element.trigger('change');
+		                }					
+				);
 			}
 			return false;
 		});
@@ -182,20 +190,26 @@ $.widget("ui.multiselect", {
 			that.availableList.children('li:visible').each(function(i) {
 				f.appendChild(this);
 			});
+			
 			if (f.hasChildNodes()){
-				var nodes = f.childNodes, 
-				    len = nodes.length;
-				for(var i=0; i<len; i++){
-    				var item = $(nodes[i]);
-    				if (item.hasClass("ui-draggable"))
-    					item.draggable("destroy");
-    				that._applyItemState(item, true);
-    				item.data('optionLink').attr('selected', true);
-	            }
-               	that.count += len;
-       			that._updateCount();
-       			that.selectedList.append(f);
-       			that.element.trigger('change');
+				$(that.container).append(that.busy);
+				timedProcessArray(
+					$.makeArray(f.childNodes), 
+	            	function(node){
+	    				var item = $(node);
+	    				if (item.hasClass("ui-draggable"))
+	    					item.draggable("destroy");
+	    				that._applyItemState(item, true);
+	    				item.data('optionLink').attr('selected', true);
+	                },
+	                function(){ // callback
+	                	that.count += f.childNodes.length;
+	        			that._updateCount();
+	        			that.selectedList.append(f);
+	        			that.busy.detach();
+	        			that.element.trigger('change');
+	                }
+	            );
 			}
 			return false;
 		});
@@ -245,26 +259,37 @@ $.widget("ui.multiselect", {
 		    selectedFrag = document.createDocumentFragment(),
 		    availableFrag = document.createDocumentFragment();
 		
-		options.each(function(index) {
-			var item;
-			if (this.selected){
-				that.count += 1;
-				if (that.options.sortable)
-					item = $('<li class="ui-state-default ui-element" title="'+this.text+'"><span class="ui-icon ui-icon-arrowthick-2-n-s"/>'+this.text+'<a href="#" class="action"><span class="ui-corner-all ui-icon ui-icon-minus"/></a></li>');
-				else 
-					item = $('<li class="ui-state-default ui-element" title="'+this.text+'"><span class="ui-icon ui-helper-hidden"/>'+this.text+'<a href="#" class="action"><span class="ui-corner-all ui-icon ui-icon-minus"/></a></li>');
-				selectedFrag.appendChild(item[0]);
-			}else {
-				item = $('<li class="ui-state-default ui-element" title="'+this.text+'"><span class="ui-helper-hidden"/>'+this.text+'<a href="#" class="action"><span class="ui-corner-all ui-icon ui-icon-plus"/></a></li>');
-				availableFrag.appendChild(item[0]);
-			}
-			item.data({'optionLink': $(this), 'idx': index});
-		});
-        that.selectedList.append(selectedFrag);
-        that.availableList.append(availableFrag);
-      	that._updateCount();
-       	that._filter.apply(that.availableContainer.find('input.search'), [that.availableList]);
-	},
+		if (options.length > 0)
+			$(that.container).append(that.busy); // show busy spinner
+		
+		timedProcessArray(
+			options.toArray(), 
+           	function(option, index){
+				var item;
+				if (option.selected){
+					that.count += 1;
+					if (that.options.sortable)
+						item = $('<li class="ui-state-default ui-element" title="'+option.text+'"><span class="ui-icon ui-icon-arrowthick-2-n-s"/>'+option.text+'<a href="#" class="action"><span class="ui-corner-all ui-icon ui-icon-minus"/></a></li>');
+					else 
+						item = $('<li class="ui-state-default ui-element" title="'+option.text+'"><span class="ui-icon ui-helper-hidden"/>'+option.text+'<a href="#" class="action"><span class="ui-corner-all ui-icon ui-icon-minus"/></a></li>');
+					selectedFrag.appendChild(item[0]);
+				}else {
+					item = $('<li class="ui-state-default ui-element" title="'+option.text+'"><span class="ui-helper-hidden"/>'+option.text+'<a href="#" class="action"><span class="ui-corner-all ui-icon ui-icon-plus"/></a></li>');
+					availableFrag.appendChild(item[0]);
+				}
+				item.data({'optionLink': $(option), 'idx': index});
+   			},
+            function(){ // callback
+               	that.selectedList.append(selectedFrag);
+               	that.availableList.append(availableFrag);
+        		that._updateCount();
+        		that._filter.apply(that.availableContainer.find('input.search'), [that.availableList]);
+        		//that.busy.detach();  // remove busy spinner
+        		if (typeof that.options.loaded == "function")
+        			that.options.loaded();
+            }					
+		);
+  },
 	_updateCount: function() {
 		this.selectedContainer.find('span.count').text(this.count+" "+$.ui.multiselect.locale.itemsCount);
 	},
@@ -450,3 +475,23 @@ $.extend($.ui.multiselect, {
 
 
 })(jQuery);
+
+/*
+ * Based on code by Nicholas C. Zakas.
+ */
+function timedProcessArray(items, process, callback) {
+	// create a clone of the original
+	var todo = items.concat(), index = 0;
+	setTimeout(function() {
+		var start = +new Date();
+		do {
+			process(todo.shift(), index++);	
+		} while (todo.length > 0 && (+new Date() - start < 100));
+		if (todo.length > 0) {
+			setTimeout(arguments.callee, 25);
+		} else {
+			if (typeof callback == "function")
+				callback(items);
+		}
+	}, 10);
+}

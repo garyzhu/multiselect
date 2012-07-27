@@ -82,7 +82,7 @@ $.widget("ui.multiselect", {
 			height = this.element.height();
 		}
 
-		that.busy = $("<div style='top: "+height/2+"px; left: "+(width/2-50)+"px;' class='loading'><span class'ui-icon'></span> Processing</div>");
+		that.busy = $("<div style='top: "+height/2+"px; left: "+(width/2-40)+"px;' class='loading'>Processing...</div>");
 
 		// set dimensions
 		this.container.width(width-2);
@@ -165,7 +165,7 @@ $.widget("ui.multiselect", {
 				f.appendChild(this);
 			});
 			if (f.hasChildNodes()){
-				$(that.container).append(that.busy); // show busy spinner
+				$(that.container).append(that.busy);
 				timedProcessArray(
 						$.makeArray(f.childNodes), 
 		            	function(node){
@@ -177,7 +177,7 @@ $.widget("ui.multiselect", {
 		                	that.count -= f.childNodes.length;
 		        			that._updateCount();
 		        			that.availableList.append(f);
-		        			that.busy.detach();  // remove busy spinner
+		        			that.busy.detach();
 		        			that.element.trigger('change');
 		                }					
 				);
@@ -260,7 +260,7 @@ $.widget("ui.multiselect", {
 		    availableFrag = document.createDocumentFragment();
 		
 		if (options.length > 0)
-			$(that.container).append(that.busy); // show busy spinner
+			$(that.container).append(that.busy);
 		
 		timedProcessArray(
 			options.toArray(), 
@@ -284,7 +284,7 @@ $.widget("ui.multiselect", {
                	that.availableList.append(availableFrag);
         		that._updateCount();
         		that._filter.apply(that.availableContainer.find('input.search'), [that.availableList]);
-        		//that.busy.detach();  // remove busy spinner
+        		that.busy.detach();
         		if (typeof that.options.loaded == "function")
         			that.options.loaded();
             }					
